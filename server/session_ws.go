@@ -171,6 +171,7 @@ func (s *sessionWS) Expiry() int64 {
 }
 
 func (s *sessionWS) Consume() {
+	s.logger.Debug("invoked Consume")
 	// Fire an event for session start.
 	if fn := s.runtime.EventSessionStart(); fn != nil {
 		fn(s.userID.String(), s.username.Load(), s.vars, s.expiry, s.id.String(), s.clientIP, s.clientPort, s.lang, time.Now().UTC().Unix())
@@ -182,7 +183,9 @@ func (s *sessionWS) Consume() {
 		s.Close("failed to set initial read deadline", runtime.PresenceReasonDisconnect)
 		return
 	}
-	s.conn.SetPongHandler(func(string) error {
+	s.conn.SetPongHandler(func(st string) error {
+		s.logger.Debug("pong handler",
+			zap.String("pongMessage", st))
 		s.maybeResetPingTimer()
 		return nil
 	})
@@ -195,13 +198,22 @@ func (s *sessionWS) Consume() {
 
 IncomingLoop:
 	for {
+		s.logger.Debug("incoming for reading")
 		messageType, data, err := s.conn.ReadMessage()
+		s.logger.Debug("incoming loop payload",
+			zap.Int("s.wsMessageType", s.wsMessageType),
+			zap.Int("messageType", messageType),
+			zap.ByteString("data", data),
+			zap.String("dataStr", string(data)),
+			zap.Error(err),
+		)
 		if err != nil {
+			s.logger.Error("Error reading message from client", zap.Error(err))
 			// Ignore "normal" WebSocket errors.
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
 				// Ignore underlying connection being shut down while read is waiting for data.
 				if e, ok := err.(*net.OpError); !ok || e.Err.Error() != "use of closed network connection" {
-					s.logger.Debug("Error reading message from client", zap.Error(err))
+					s.logger.Error("NonNormalClose and NonNetwork Error reading message from client", zap.Error(err))
 					reason = err.Error()
 				}
 			}
@@ -210,7 +222,7 @@ IncomingLoop:
 		if messageType != s.wsMessageType {
 			// Expected text but received binary, or expected binary but received text.
 			// Disconnect client if it attempts to use this kind of mixed protocol mode.
-			s.logger.Debug("Received unexpected WebSocket message type", zap.Int("expected", s.wsMessageType), zap.Int("actual", messageType))
+			s.logger.Error("Received unexpected WebSocket message type", zap.Int("expected", s.wsMessageType), zap.Int("actual", messageType))
 			reason = "received unexpected WebSocket message type"
 			break
 		}
@@ -302,18 +314,28 @@ func (s *sessionWS) processOutgoing() {
 
 OutgoingLoop:
 	for {
+		s.logger.Debug("outgoing for waiting",
+			zap.Int("messageType", s.wsMessageType))
 		select {
 		case <-s.ctx.Done():
 			// Session is closing, close the outgoing process routine.
 			break OutgoingLoop
 		case <-s.pingTimer.C:
+			s.logger.Debug("outgoing sending ping",
+				zap.Int("messageType", s.wsMessageType))
 			// Periodically send pings.
 			if msg, ok := s.pingNow(); !ok {
 				// If ping fails the session will be stopped, clean up the loop.
 				reason = msg
 				break OutgoingLoop
+			} else {
+				s.logger.Debug("outgoing sent ping",
+					zap.Int("messageType", s.wsMessageType))
 			}
 		case payload := <-s.outgoingCh:
+			s.logger.Debug("outgoing payload",
+				zap.Int("messageType", s.wsMessageType),
+				zap.String("payload", string(payload)))
 			s.Lock()
 			if s.stopped {
 				// The connection may have stopped between the payload being queued on the outgoing channel and reaching here.
@@ -328,11 +350,18 @@ OutgoingLoop:
 				reason = err.Error()
 				break OutgoingLoop
 			}
+			s.logger.Debug("outgoing writing",
+				zap.Int("messageType", s.wsMessageType),
+				zap.String("payload", string(payload)))
 			if err := s.conn.WriteMessage(s.wsMessageType, payload); err != nil {
 				s.Unlock()
 				s.logger.Warn("Could not write message", zap.Error(err))
 				reason = err.Error()
 				break OutgoingLoop
+			} else {
+				s.logger.Debug("wrote outgoing",
+					zap.Int("messageType", s.wsMessageType),
+					zap.String("payload", string(payload)))
 			}
 			s.Unlock()
 
@@ -355,11 +384,14 @@ func (s *sessionWS) pingNow() (string, bool) {
 		s.logger.Warn("Could not set write deadline to ping", zap.Error(err))
 		return err.Error(), false
 	}
+	s.logger.Debug("Sending ping")
 	err := s.conn.WriteMessage(websocket.PingMessage, []byte{})
 	s.Unlock()
 	if err != nil {
 		s.logger.Warn("Could not send ping", zap.Error(err))
 		return err.Error(), false
+	} else {
+		s.logger.Debug("Successfully sent ping")
 	}
 
 	return "", true
