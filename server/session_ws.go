@@ -200,7 +200,7 @@ IncomingLoop:
 	for {
 		s.logger.Debug("incoming for reading")
 		messageType, data, err := s.conn.ReadMessage()
-		s.logger.Debug("incoming loop payload",
+		s.logger.Warn("incoming loop payload",
 			zap.Int("s.wsMessageType", s.wsMessageType),
 			zap.Int("messageType", messageType),
 			zap.ByteString("data", data),
@@ -321,7 +321,7 @@ OutgoingLoop:
 			// Session is closing, close the outgoing process routine.
 			break OutgoingLoop
 		case <-s.pingTimer.C:
-			s.logger.Debug("outgoing sending ping",
+			s.logger.Warn("outgoing sending ping",
 				zap.Int("messageType", s.wsMessageType))
 			// Periodically send pings.
 			if msg, ok := s.pingNow(); !ok {
@@ -333,7 +333,7 @@ OutgoingLoop:
 					zap.Int("messageType", s.wsMessageType))
 			}
 		case payload := <-s.outgoingCh:
-			s.logger.Debug("outgoing payload",
+			s.logger.Warn("outgoing payload",
 				zap.Int("messageType", s.wsMessageType),
 				zap.String("payload", string(payload)))
 			s.Lock()
@@ -350,12 +350,12 @@ OutgoingLoop:
 				reason = err.Error()
 				break OutgoingLoop
 			}
-			s.logger.Debug("outgoing writing",
+			s.logger.Warn("outgoing writing",
 				zap.Int("messageType", s.wsMessageType),
 				zap.String("payload", string(payload)))
 			if err := s.conn.WriteMessage(s.wsMessageType, payload); err != nil {
 				s.Unlock()
-				s.logger.Warn("Could not write message", zap.Error(err))
+				s.logger.Error("Could not write message", zap.Error(err))
 				reason = err.Error()
 				break OutgoingLoop
 			} else {
