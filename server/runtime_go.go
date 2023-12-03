@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	game_backend_plugin "github.com/17media/nakama-game-server"
 	"path/filepath"
 	"plugin"
 	"strings"
@@ -2708,18 +2709,18 @@ func NewRuntimeProviderGo(ctx context.Context, logger, startupLogger *zap.Logger
 		}
 
 		// Open the plugin, and look up the required initialisation function.
-		relPath, name, fn, err := openGoModule(startupLogger, rootPath, path)
+		/*relPath, name, fn, err := openGoModule(startupLogger, rootPath, path)
 		if err != nil {
 			// Errors are already logged in the function above.
 			return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, err
-		}
+		}*/
 
 		// Run the initialisation.
-		if err = fn(ctx, runtimeLogger, db, nk, initializer); err != nil {
-			startupLogger.Fatal("Error returned by InitModule function in Go module", zap.String("name", name), zap.Error(err))
+		if err := game_backend_plugin.InitModule(ctx, runtimeLogger, db, nk, initializer); err != nil {
+			startupLogger.Fatal("Error returned by InitModule function in Go module", zap.String("name", "name"), zap.Error(err))
 			return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, errors.New("error returned by InitModule function in Go module")
 		}
-		modulePaths = append(modulePaths, relPath)
+		// modulePaths = append(modulePaths, relPath)
 	}
 
 	startupLogger.Info("Go runtime modules loaded")
@@ -2777,11 +2778,11 @@ func CheckRuntimeProviderGo(logger *zap.Logger, rootPath string, paths []string)
 
 		// Open the plugin, and look up the required initialisation function.
 		// The function isn't used here, all we need is a type/signature check.
-		_, _, _, err := openGoModule(logger, rootPath, path)
+		/*_, _, _, err := openGoModule(logger, rootPath, path)
 		if err != nil {
 			// Errors are already logged in the function above.
 			return err
-		}
+		}*/
 	}
 
 	return nil
